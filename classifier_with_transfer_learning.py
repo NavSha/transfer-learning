@@ -6,6 +6,7 @@ from keras.applications import VGG16
 from keras import models
 from keras import layers
 from keras import optimizers
+import matplotlib.pyplot as plt
 
 # set directories to be used for creation of generators
 base_dir = '/Users/NavSha/Documents/tensorflow-projects/cats_and_dogs_small'
@@ -21,47 +22,63 @@ validation_datagen = ImageDataGenerator(rescale=1./255)    #validation data is n
 train_generator = train_datagen.flow_from_directory(train_dir,target_size=(150,150),batch_size=20,class_mode='binary')
 validation_generator = validation_datagen.flow_from_directory(validation_dir,target_size=(150,150),batch_size=20,class_mode='binary')
 
-#define the model
-conv_base = VGG16(weights = 'imagenet',include_top=False, input_shape=(150,150,3))
-model = models.Sequential()
-model.add(conv_base)
-model.add(layers.Flatten())
-model.add(layers.Dense(256,activation='relu'))
-model.add(layers.Dropout(0.5))
-model.add(layers.Dense(1,activation='sigmoid'))
-model.summary()
+def create_model():
+    #define the model
+    conv_base = VGG16(weights = 'imagenet',include_top=False, input_shape=(150,150,3))
+    model = models.Sequential()
+    model.add(conv_base)
+    model.add(layers.Flatten())
+    model.add(layers.Dense(256,activation='relu'))
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(1,activation='sigmoid'))
+    #freeze the convolution base to avoid its weights from getting updated during training.
+    conv_base.trainable = False
+    return model
 
-#freeze the convolution base to avoid its weights from getting updated during
-#training. It has to be done be done before model compilation
-conv_base.trainable = False
 
-#compile the model
-model.compile(optimizer = optimizers.RMSprop(lr=2e-5),loss = 'binary_crossentropy',metrics=['acc'])
+def train_model():
+    model = create_model()
+    #compile the model
+    model.compile(optimizer = optimizers.Adam,loss = 'binary_crossentropy',metrics=['acc'])
+    #callbacks to get insight into the model during training
+    callbacks_list = [EarlyStopping(monitor = 'val_loss',patience = 3, verbose = 1),ModelCheckpoint(filepath = dogs_and_cats_tf_weights.h5,monitor = 'val_loss',verbose = 1, save_best_only=True)]
+    #train the model
+    history = model.fit_generator(train_generator,steps_per_epoch=100,epochs=5,validation_data=validation_generator,validation_steps=50, callbacks = callbacks_list)
+    # save the model wights for later use
+    model.save('dogs_and_cats_tl_weights.h5')
+    # save the model as json
+    model_json = model.to_json()
+    with open("dogs_and_cats_tl_model.json", "w") as json_file:
+        json_file.write(model_json)
+    return history
 
-#train the model
-history = model.fit_generator(train_generator,steps_per_epoch=100,epochs=30,validation_data=validation_generator,validation_steps=50)
+def plot_loss_and_accuracy():
+    #let's plot the training and validation losses and accuracies
+    history = train_model()
+    acc = history.history['acc']
+    loss = history.history['loss']
+    val_acc = history.history['val_acc']
+    val_loss = history.history['val_loss']
 
-# save the model for later use
-model.save('cats_and_dogs_small_4.h5')
+    epochs = range(1,len(acc)+1)
 
-#let's plot the training and validation losses and accuracies
-import matplotlib.pyplot as plt
+    plt.plot(epochs, acc, 'bo', label = 'Training acc')
+    plt.plot(epochs,val_acc,'b',label = 'Validation acc')
+    plt.title('Training and validation accuracy')
+    plt.legend()
+    plt.figure()
 
-acc = history.history['acc']
-loss = history.history['loss']
-val_acc = history.history['val_acc']
-val_loss = history.history['val_loss']
+    plt.plot(epochs, loss, 'ro', label = 'Training loss')
+    plt.plot(epochs,val_acc,'r',label = 'Validation loss')
+    plt.title('Training and validation loss')
+    plt.legend()
+    plt.show()
 
-epochs = range(1,len(acc)+1)
+def test_model():
+    test_generator = validation_datagen.flow_from_directory(test_dir, target_size=(150,150),batch_size=20,class_mode='binary')
+    test_loss,test_accuracy = model.evaluate_generator(test_generator,steps=50)
+    print('Test accuracy:',test_acc)
 
-plt.plot(epochs, acc, 'bo', label = 'Training acc')
-plt.plot(epochs,val_acc,'bo',label = 'Validation acc')
-plt.title('Training and validation accuracy')
-plt.legend()
-plt.figure()
-
-plt.plot(epochs, loss, 'ro', label = 'Training loss')
-plt.plot(epochs,val_acc,'ro',label = 'Validation loss')
-plt.title('Training and validation loss')
-plt.legend()
-plt.show()
+if __name__ == "__main__":
+    plot_loss_and_accuracy()
+    test_model()
