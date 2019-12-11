@@ -7,6 +7,7 @@ from keras import models
 from keras import layers
 from keras import optimizers
 import matplotlib.pyplot as plt
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 
 # set directories to be used for creation of generators
 base_dir = '/Users/NavSha/Documents/tensorflow-projects/cats_and_dogs_small'
@@ -27,23 +28,27 @@ def create_model():
     conv_base = VGG16(weights = 'imagenet',include_top=False, input_shape=(150,150,3))
     model = models.Sequential()
     model.add(conv_base)
-    model.add(layers.Flatten())
-    model.add(layers.Dense(256,activation='relu'))
-    model.add(layers.Dropout(0.5))
-    model.add(layers.Dense(1,activation='sigmoid'))
     #freeze the convolution base to avoid its weights from getting updated during training.
     conv_base.trainable = False
+    # add dense layers on top of the conv base
+    model.add(layers.Flatten())
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(256,activation='relu'))
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(64))
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(1,activation='sigmoid'))
     return model
 
 
 def train_model():
     model = create_model()
     #compile the model
-    model.compile(optimizer = optimizers.Adam,loss = 'binary_crossentropy',metrics=['acc'])
+    model.compile(optimizer = 'adam',loss = 'binary_crossentropy',metrics=['acc'])
     #callbacks to get insight into the model during training
-    callbacks_list = [EarlyStopping(monitor = 'val_loss',patience = 3, verbose = 1),ModelCheckpoint(filepath = dogs_and_cats_tf_weights.h5,monitor = 'val_loss',verbose = 1, save_best_only=True)]
+    callbacks_list = [EarlyStopping(monitor = 'val_loss',patience = 4, verbose = 1),ModelCheckpoint(filepath = 'dogs_and_cats_tl_weights.h5',monitor = 'val_loss',verbose = 1, save_best_only=True), ReduceLROnPlateau(monitor = 'val_loss',factor = 0.1, patience = 3)]
     #train the model
-    history = model.fit_generator(train_generator,steps_per_epoch=100,epochs=5,validation_data=validation_generator,validation_steps=50, callbacks = callbacks_list)
+    history = model.fit_generator(train_generator,steps_per_epoch=100,epochs=10,validation_data=validation_generator,validation_steps=50, callbacks = callbacks_list)
     # save the model wights for later use
     model.save('dogs_and_cats_tl_weights.h5')
     # save the model as json
@@ -74,11 +79,5 @@ def plot_loss_and_accuracy():
     plt.legend()
     plt.show()
 
-def test_model():
-    test_generator = validation_datagen.flow_from_directory(test_dir, target_size=(150,150),batch_size=20,class_mode='binary')
-    test_loss,test_accuracy = model.evaluate_generator(test_generator,steps=50)
-    print('Test accuracy:',test_acc)
-
 if __name__ == "__main__":
     plot_loss_and_accuracy()
-    test_model()
